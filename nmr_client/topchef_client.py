@@ -305,10 +305,9 @@ class TopChefClient(_TopChefResource):
 		return service_ids
 
 	def get_service_by_id(self, service_id):
-		url = '%s%s' % (self.SERVICES_ENDPOINT, service_id)
+		url = '%s/%s' % (self.SERVICES_ENDPOINT, service_id)
 		connection = self.net._open_getter_connection(url)
-		connection.setRequestMethod("GET")
-		
+				
 		status_code = connection.getResponseCode()
 		
 		if (status_code == 404):
@@ -376,7 +375,7 @@ class TopChefService(_TopChefResource):
 		Check with the server to see if the provided dictionary satisfies the
 		job schema, and then send it to the server.
 		"""
-		endpoint = '%s/%s' % (self.SERVICES_ENDPOINT, self.id)
+		endpoint = '%s/%s/jobs' % (self.SERVICES_ENDPOINT, self.id)
 		
 		job_details = self._get_service_dictionary()
 		
@@ -384,9 +383,11 @@ class TopChefService(_TopChefResource):
 		
 		self.validate_json_schema(job_parameters, schema_to_validate)
 		
+		data_to_write = {'parameters': job_parameters}
+		
 		connection = self.net._open_connection(endpoint)
 		self.net._write_json_to_connection(
-			job_parameters, connection, method="POST"
+			data_to_write, connection, method="POST"
 		)
 		
 		status_code = connection.getResponseCode()
@@ -398,7 +399,7 @@ class TopChefService(_TopChefResource):
 				))
 		else:
 			response = self.net._read_json_from_connection(connection)
-			job_id = response['service_details']['id']
+			job_id = response['data']['job_details']['id']
 			
 			return TopChefJob(job_id, self.net)
 					

@@ -667,9 +667,9 @@ class TestTopChefClient(TestModule):
 	def setUp(self):
 		TestModule.setUp(self)
 		
-		self.network_manager = MockNetworkManager()
+		self.net = MockNetworkManager()
 		
-		self.client = TopChefClient(self.network_manager)
+		self.client = TopChefClient(self.net)
 
 class TestValidateJSONSchema(TestTopChefResource):
 	def setUp(self):
@@ -739,20 +739,19 @@ class TestGetServiceIds(TestTopChefClient):
 			'37bdb0be-6963-11e6-9860-001018737a6d'
 		]
 		self.json_from_api = {'data': [{'id': id} for id in self.service_ids]}
-		self.network_manager.set_data_to_read(self.json_from_api)
+		self.net.set_data_to_read(self.json_from_api)
 		
 	def test_get_service_ids(self):
 		service_ids = self.client.get_service_ids()
 		self.assertEqual(self.service_ids, service_ids)
 		
 		self.assertEqual(
-			self.network_manager.mock_details\
+			self.net.mock_details\
 				['_open_getter_connection']['number_of_calls'],
 			1
 		)
 		self.assertEqual(
-			self.network_manager.mock_details\
-				['_read_json_from_connection']['number_of_calls'],
+			self.net.mock_details['_read_json_from_connection']['number_of_calls'],
 			1
 		)
 
@@ -760,16 +759,27 @@ class TestGetServiceById(TestTopChefClient):
 	def setUp(self):
 		TestTopChefClient.setUp(self)
 		self.service_id = '37bdb0be-6963-11e6-9860-001018737a6d'
+		self.service_url = '/services/%s' % self.service_id
 		
 	def test_get_service_by_id(self):
-		self.network_manager.set_response_code(200)
+		self.net.set_response_code(200)
 		
 		service = self.client.get_service_by_id(self.service_id)
 		
 		self.assertEqual(self.service_id, service.id)
+		
+		self.assertEqual(
+			self.net.mock_details['_open_getter_connection']['url'],
+			self.service_url
+		)
+		
+		self.assertEqual(
+			self.net.mock_details['setRequestMethod']['number_of_calls'],
+			0
+		)
 	
 	def test_get_service_by_id_404(self):
-		self.network_manager.set_response_code(404)
+		self.net.set_response_code(404)
 		
 		def _error_thunk(client, service_id):
 			client.get_service_by_id(service_id)
@@ -777,7 +787,7 @@ class TestGetServiceById(TestTopChefClient):
 		self.assertRaises(NetworkError, _error_thunk, self.client, self.service_id)
 		
 	def test_get_service_by_id_500(self):
-		self.network_manager.set_response_code(500)
+		self.net.set_response_code(500)
 		
 		def _error_thunk(client, service_id):
 			client.get_service_by_id(service_id)
@@ -793,20 +803,18 @@ class TestGetJobIDs(TestTopChefClient):
 		]
 		self.json_from_api = {'data': [{'id': job_id} for job_id in self.job_ids]}
 		
-		self.network_manager.set_data_to_read(self.json_from_api)
+		self.net.set_data_to_read(self.json_from_api)
 	
 	def test_get_job_ids(self):
 		job_ids = self.client.get_job_ids()
 		
 		self.assertEqual(self.job_ids, job_ids)
 		self.assertEqual(
-			self.network_manager.mock_details\
-				['_open_getter_connection']['number_of_calls'],
+			self.net.mock_details['_open_getter_connection']['number_of_calls'],
 			1
 		)
 		self.assertEqual(
-			self.network_manager.mock_details\
-				['_read_json_from_connection']['number_of_calls'],
+			self.net.mock_details['_read_json_from_connection']['number_of_calls'],
 			1
 		)
 
@@ -816,7 +824,7 @@ class TestGetJobByID(TestTopChefClient):
 		self.job_id = '1d305560-6960-11e6-8591-001018737a6d'
 	
 	def test_get_job_by_id(self):
-		self.network_manager.set_response_code(200)
+		self.net.set_response_code(200)
 		
 		job = self.client.get_job_by_id(self.job_id)
 		
@@ -824,7 +832,7 @@ class TestGetJobByID(TestTopChefClient):
 		self.assertEqual(job.__class__, TopChefJob)
 
 	def test_get_job_by_id_404(self):
-		self.network_manager.set_response_code(404)
+		self.net.set_response_code(404)
 		
 		def _response_thunk(client, job_id):
 			client.get_job_by_id(job_id)
@@ -834,7 +842,7 @@ class TestGetJobByID(TestTopChefClient):
 		)
 		
 	def test_get_job_by_id_generic_error(self):
-		self.network_manager.set_response_code(500)
+		self.net.set_response_code(500)
 		
 		def _response_thunk(client, job_id):
 			client.get_job_by_id(job_id)
@@ -908,6 +916,9 @@ class TestRequestJob(TestTopChefService):
 		self.service._get_service_dictionary = self._get_service_dictionary
 		self.service.validate_json_schema = self._validate_schema
 		
+		self.expected_data = {'parameters': self.job_form}
+		self.expected_url = '/services/%s/jobs' % self.service_id
+		
 	def test_request_job_network_error(self):
 		self.net.set_response_code(500)
 		
@@ -919,13 +930,23 @@ class TestRequestJob(TestTopChefService):
 	def test_request_job(self):
 		self.net.set_response_code(201)
 		self.net.set_data_to_read({
-			'service_details': {'id': self.new_job_id}
+			'data': {'job_details': {'id': self.new_job_id}}
 		})
 		
 		job = self.service.request_job(self.job_form)
 		self.assertEqual(self.new_job_id, job.id)
 		self.assertEqual(self.net, job.net)
 		
+		self.assertEqual(
+			self.expected_data,
+			self.net.mock_details['_write_json_to_connection']['last_called_with']\
+				['data']
+		)
+		self.assertEqual(
+			self.expected_url,
+			self.net.mock_details['_open_connection']['last_called_with']
+		)
+			
 
 blade_runner = UnitTestRunner([
 	TestNetworkManagerConstructor('test_constructor_min_args'),
